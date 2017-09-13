@@ -175,8 +175,10 @@ namespace TVHeadEnd.DataHelper
                                         {
                                             case "radio":
                                                 ci.ChannelType = ChannelType.Radio;
-                                                serviceFound = true;
-                                                break;
+                                                //serviceFound = true;
+                                                _logger.Info("[TVHclient] ChannelDataHelper: ignore type 'Radio' as emby canceled the support for playing radio channels.");
+                                                continue;
+                                                //break;
                                             case "sdtv":
                                             case "hdtv":
                                                 ci.ChannelType = ChannelType.TV;
@@ -193,8 +195,10 @@ namespace TVHeadEnd.DataHelper
                                                     case "radio":
                                                         _logger.Info("[TVHclient] ChannelDataHelper: map service tag 'Other' to 'Radio'.");
                                                         ci.ChannelType = ChannelType.Radio;
-                                                        serviceFound = true;
-                                                        break;
+                                                        //serviceFound = true;
+                                                        _logger.Info("[TVHclient] ChannelDataHelper: ignore type 'Radio' as emby canceled the support for playing radio channels.");
+                                                        continue;
+                                                        //break;
                                                     default:
                                                         _logger.Info("[TVHclient] ChannelDataHelper: don't map service tag 'Other' - will be ignored.");
                                                         break;
