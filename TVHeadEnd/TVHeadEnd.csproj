@@ -2,8 +2,12 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net46</TargetFrameworks>
-    <AssemblyVersion>1.1.0.1</AssemblyVersion>
-    <FileVersion>1.1.0.1</FileVersion>
+    <AssemblyVersion>1.1.2.0</AssemblyVersion>
+    <FileVersion>1.1.2.0</FileVersion>
+    <Description>Emby plugin to provide Live-TV using TVHeadend server</Description>
+    <Authors>Tolotos, FC7</Authors>
+    <Company />
+    <Product>TVHeadEnd4Emby</Product>
   </PropertyGroup>
 
   <ItemGroup>
