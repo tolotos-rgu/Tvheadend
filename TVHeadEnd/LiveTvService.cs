@@ -18,6 +18,7 @@ using TVHeadEnd.Helper;
 using TVHeadEnd.HTSP;
 using TVHeadEnd.HTSP_Responses;
 using TVHeadEnd.TimeoutHelper;
+using System.Linq;
 
 namespace TVHeadEnd
 {
@@ -425,6 +426,7 @@ namespace TVHeadEnd
 
                     // Probe the asset stream to determine available sub-streams
                     string livetvasset_probeUrl = "" + livetvasset.Path;
+                    string livetvasset_source = "LiveTV";
 
                     // If enabled, force video deinterlacing for channels
                     if(_htsConnectionHandler.GetForceDeinterlace())
