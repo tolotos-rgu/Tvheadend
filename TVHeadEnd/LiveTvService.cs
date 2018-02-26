@@ -35,6 +35,7 @@ namespace TVHeadEnd
         private volatile int _subscriptionId = 0;
 
         private readonly ILogger _logger;
+        public DateTime LastRecordingChange = DateTime.MinValue;
 
         public LiveTvService(ILogger logger, IMediaEncoder mediaEncoder)
         {
@@ -113,6 +114,7 @@ namespace TVHeadEnd
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
                 _htsConnectionHandler.SendMessage(deleteAutorecMessage, lbrh);
+                LastRecordingChange = DateTime.UtcNow;
                 return lbrh.getResponse();
             }));
 
@@ -149,6 +151,7 @@ namespace TVHeadEnd
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
                 _htsConnectionHandler.SendMessage(cancelTimerMessage, lbrh);
+                LastRecordingChange = DateTime.UtcNow;
                 return lbrh.getResponse();
             }));
 
@@ -323,6 +326,7 @@ namespace TVHeadEnd
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
                 _htsConnectionHandler.SendMessage(deleteRecordingMessage, lbrh);
+                LastRecordingChange = DateTime.UtcNow;
                 return lbrh.getResponse();
             }));
 
@@ -364,7 +368,17 @@ namespace TVHeadEnd
                 return new List<ChannelInfo>();
             }
 
-            return twtRes.Result;
+            var list = twtRes.Result.ToList();
+
+            foreach (var channel in list)
+            {
+                if (string.IsNullOrEmpty(channel.ImageUrl))
+                {
+                    channel.ImageUrl = _htsConnectionHandler.GetChannelImageUrl(channel.Id);
+                }
+            }
+
+            return list;
         }
 
         public async Task<MediaSourceInfo> GetChannelStream(string channelId, string mediaSourceId, CancellationToken cancellationToken)
@@ -373,9 +387,7 @@ namespace TVHeadEnd
             getTicketMessage.Method = "getTicket";
             getTicketMessage.putField("channelId", channelId);
 
-            _logger.Info("[TVHclient] GetChannelStream called with channelID: " + channelId);
-
-            TaskWithTimeoutRunner <HTSMessage> twtr = new TaskWithTimeoutRunner<HTSMessage>(TIMEOUT);
+            TaskWithTimeoutRunner<HTSMessage> twtr = new TaskWithTimeoutRunner<HTSMessage>(TIMEOUT);
             TaskWithTimeoutResult<HTSMessage> twtRes = await twtr.RunWithTimeout(Task.Factory.StartNew<HTSMessage>(() =>
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
@@ -413,10 +425,6 @@ namespace TVHeadEnd
 
                     // Probe the asset stream to determine available sub-streams
                     string livetvasset_probeUrl = "" + livetvasset.Path;
-                    string livetvasset_source = "LiveTV";
-
-                    // Probe the asset stream to determine available sub-streams
-                    await ProbeStream(livetvasset, livetvasset_probeUrl, livetvasset_source, cancellationToken);
 
                     // If enabled, force video deinterlacing for channels
                     if(_htsConnectionHandler.GetForceDeinterlace())
@@ -435,21 +443,32 @@ namespace TVHeadEnd
                     }
 
                     return livetvasset;
+
                 }
                 else
                 {
-                    String baseURL = _htsConnectionHandler.GetHttpBaseUrl();
-                    String ticketPath = getTicketResponse.getString("path");
-                    String ticket = getTicketResponse.getString("ticket");
-                    String mediaPath = _htsConnectionHandler.GetHttpBaseUrl() + ticketPath + "?ticket=" + ticket;
-
-                    _logger.Info("[TVHclient] Building MediaSourceInfo with: " + mediaPath);
-
                     return new MediaSourceInfo
                     {
                         Id = "" + currSubscriptionId,
-                        Path = mediaPath,
+                        Path = _htsConnectionHandler.GetHttpBaseUrl() + getTicketResponse.getString("path") + "?ticket=" + getTicketResponse.getString("ticket"),
                         Protocol = MediaProtocol.Http,
+                        MediaStreams = new List<MediaStream>
+                            {
+                                new MediaStream
+                                {
+                                    Type = MediaStreamType.Video,
+                                    // Set the index to -1 because we don't know the exact index of the video stream within the container
+                                    Index = -1,
+                                    // Set to true if unknown to enable deinterlacing
+                                    IsInterlaced = true
+                                },
+                                new MediaStream
+                                {
+                                    Type = MediaStreamType.Audio,
+                                    // Set the index to -1 because we don't know the exact index of the audio stream within the container
+                                    Index = -1
+                                }
+                            }
                     };
 
                 }
@@ -460,9 +479,6 @@ namespace TVHeadEnd
 
         public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
         {
-            _logger.Info("[TVHclient] GetChannelStreamMediaSources called with channelID: " + channelId);
-
-
             throw new NotImplementedException();
         }
 
@@ -526,6 +542,11 @@ namespace TVHeadEnd
 
         public async Task<IEnumerable<RecordingInfo>> GetRecordingsAsync(CancellationToken cancellationToken)
         {
+            return new List<RecordingInfo>();
+        }
+
+        public async Task<IEnumerable<MyRecordingInfo>> GetAllRecordingsAsync(CancellationToken cancellationToken)
+        {
             // retrieve all 'Pending', 'Inprogress' and 'Completed' recordings
             // we don't deliver the 'Pending' recordings
 
@@ -533,113 +554,19 @@ namespace TVHeadEnd
             if (timeOut == -1 || cancellationToken.IsCancellationRequested)
             {
                 _logger.Info("[TVHclient] GetRecordingsAsync, call canceled or timed out - returning empty list.");
-                return new List<RecordingInfo>();
+                return new List<MyRecordingInfo>();
             }
 
-            TaskWithTimeoutRunner<IEnumerable<RecordingInfo>> twtr = new TaskWithTimeoutRunner<IEnumerable<RecordingInfo>>(TIMEOUT);
-            TaskWithTimeoutResult<IEnumerable<RecordingInfo>> twtRes = await
+            TaskWithTimeoutRunner<IEnumerable<MyRecordingInfo>> twtr = new TaskWithTimeoutRunner<IEnumerable<MyRecordingInfo>>(TIMEOUT);
+            TaskWithTimeoutResult<IEnumerable<MyRecordingInfo>> twtRes = await
                 twtr.RunWithTimeout(_htsConnectionHandler.BuildDvrInfos(cancellationToken));
 
             if (twtRes.HasTimeout)
             {
-                return new List<RecordingInfo>();
+                return new List<MyRecordingInfo>();
             }
 
             return twtRes.Result;
-        }
-
-        private async Task ProbeStream(MediaSourceInfo mediaSourceInfo, string probeUrl, string source, CancellationToken cancellationToken)
-        {
-            _logger.Info("[TVHclient] Probe stream for {0}", source);
-            _logger.Info("[TVHclient] Probe URL: {0}", probeUrl);
-
-            MediaInfoRequest req = new MediaInfoRequest
-            {
-                MediaType = MediaBrowser.Model.Dlna.DlnaProfileType.Video,
-                MediaSource = mediaSourceInfo,
-                ExtractChapters = false,
-                // currently not available !!! 
-                // RequiredHttpHeaders = mediaSourceInfo.RequiredHttpHeaders,
-            };
-
-            var originalRuntime = mediaSourceInfo.RunTimeTicks;
-            Stopwatch stopWatch = new Stopwatch();
-            stopWatch.Start();
-            MediaInfo info = await _mediaEncoder.GetMediaInfo(req, cancellationToken).ConfigureAwait(false);
-            stopWatch.Stop();
-            TimeSpan ts = stopWatch.Elapsed;
-            string elapsedTime = String.Format("{0:00}:{1:00}:{2:00}.{3:00}", ts.Hours, ts.Minutes, ts.Seconds, ts.Milliseconds / 10);
-            _logger.Info("[TVHclient] Probe RunTime " + elapsedTime);
-
-            if (info != null)
-            {
-                _logger.Info("[TVHclient] Probe returned:");
-
-                mediaSourceInfo.Bitrate = info.Bitrate;
-                _logger.Info("[TVHclient]         BitRate:                    " + info.Bitrate);
-
-                mediaSourceInfo.Container = info.Container;
-                _logger.Info("[TVHclient]         Container:                  " + info.Container);
-
-                mediaSourceInfo.MediaStreams = info.MediaStreams;
-                _logger.Info("[TVHclient]         MediaStreams:               ");
-                LogMediaStreamList(info.MediaStreams, "                       ");
-
-                mediaSourceInfo.RunTimeTicks = info.RunTimeTicks;
-                _logger.Info("[TVHclient]         RunTimeTicks:               " + info.RunTimeTicks);
-
-                mediaSourceInfo.Size = info.Size;
-                _logger.Info("[TVHclient]         Size:                       " + info.Size);
-
-                mediaSourceInfo.Timestamp = info.Timestamp;
-                _logger.Info("[TVHclient]         Timestamp:                  " + info.Timestamp);
-
-                mediaSourceInfo.Video3DFormat = info.Video3DFormat;
-                _logger.Info("[TVHclient]         Video3DFormat:              " + info.Video3DFormat);
-
-                mediaSourceInfo.VideoType = info.VideoType;
-                _logger.Info("[TVHclient]         VideoType:                  " + info.VideoType);
-
-                mediaSourceInfo.RequiresClosing = true;
-                _logger.Info("[TVHclient]         RequiresClosing:            " + true);
-
-                mediaSourceInfo.RequiresOpening = true;
-                _logger.Info("[TVHclient]         RequiresOpening:            " + true);
-
-                mediaSourceInfo.SupportsDirectPlay = true;
-                _logger.Info("[TVHclient]         SupportsDirectPlay:         " + true);
-
-                mediaSourceInfo.SupportsDirectStream = true;
-                _logger.Info("[TVHclient]         SupportsDirectStream:       " + true);
-
-                mediaSourceInfo.SupportsTranscoding = true;
-                _logger.Info("[TVHclient]         SupportsTranscoding:        " + true);
-
-                mediaSourceInfo.DefaultSubtitleStreamIndex = null;
-                _logger.Info("[TVHclient]         DefaultSubtitleStreamIndex: n/a");
-
-                if (!originalRuntime.HasValue)
-                {
-                    mediaSourceInfo.RunTimeTicks = null;
-                    _logger.Info("[TVHclient]         Original runtime:           n/a");
-                }
-
-                var audioStream = mediaSourceInfo.MediaStreams.FirstOrDefault(i => i.Type == MediaBrowser.Model.Entities.MediaStreamType.Audio);
-                if (audioStream == null || audioStream.Index == -1)
-                {
-                    mediaSourceInfo.DefaultAudioStreamIndex = null;
-                    _logger.Info("[TVHclient]         DefaultAudioStreamIndex:    n/a");
-                }
-                else
-                {
-                    mediaSourceInfo.DefaultAudioStreamIndex = audioStream.Index;
-                    _logger.Info("[TVHclient]         DefaultAudioStreamIndex:    '" + info.DefaultAudioStreamIndex + "'");
-                }
-            }
-            else
-            {
-                _logger.Error("[TVHclient] Cannot probe {0} stream", source);
-            }
         }
 
         private void LogStringList(List<String> theList, String prefix)
@@ -735,9 +662,6 @@ namespace TVHeadEnd
                     // Set asset source and type for stream probing and logging
                     string recordingasset_probeUrl = "" + recordingasset.Path;
                     string recordingasset_source = "Recording";
-
-                    // Probe the asset stream to determine available sub-streams
-                    await ProbeStream(recordingasset, recordingasset_probeUrl, recordingasset_source, cancellationToken);
 
                     // If enabled, force video deinterlacing for recordings
                     if (_htsConnectionHandler.GetForceDeinterlace())
@@ -899,6 +823,7 @@ namespace TVHeadEnd
         public async Task UpdateSeriesTimerAsync(SeriesTimerInfo info, CancellationToken cancellationToken)
         {
             await CancelSeriesTimerAsync(info.Id, cancellationToken);
+            LastRecordingChange = DateTime.UtcNow;
             // TODO add if method is implemented 
             // await CreateSeriesTimerAsync(info, cancellationToken);
         }
@@ -923,6 +848,7 @@ namespace TVHeadEnd
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
                 _htsConnectionHandler.SendMessage(updateTimerMessage, lbrh);
+                LastRecordingChange = DateTime.UtcNow;
                 return lbrh.getResponse();
             }));
 
@@ -1001,4 +927,5 @@ namespace TVHeadEnd
         }
         */
     }
+
 }

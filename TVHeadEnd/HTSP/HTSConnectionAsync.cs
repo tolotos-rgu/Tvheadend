@@ -34,11 +34,15 @@ namespace TVHeadEnd.HTSP
         private readonly SizeQueue<HTSMessage> _messagesForSendQueue;
         private readonly Dictionary<int, HTSResponseHandler> _responseHandlers;
 
-        private long _threadID = 0;
         private Thread _receiveHandlerThread;
         private Thread _messageBuilderThread;
         private Thread _sendingHandlerThread;
         private Thread _messageDistributorThread;
+
+        private CancellationTokenSource _receiveHandlerThreadTokenSource;
+        private CancellationTokenSource _messageBuilderThreadTokenSource;
+        private CancellationTokenSource _sendingHandlerThreadTokenSource;
+        private CancellationTokenSource _messageDistributorThreadTokenSource;
 
         private Socket _socket = null;
 
@@ -57,29 +61,49 @@ namespace TVHeadEnd.HTSP
             _receivedMessagesQueue = new SizeQueue<HTSMessage>(int.MaxValue);
             _messagesForSendQueue = new SizeQueue<HTSMessage>(int.MaxValue);
             _responseHandlers = new Dictionary<int, HTSResponseHandler>();
+
+            _receiveHandlerThreadTokenSource = new CancellationTokenSource();
+            _messageBuilderThreadTokenSource = new CancellationTokenSource();
+            _sendingHandlerThreadTokenSource = new CancellationTokenSource();
+            _messageDistributorThreadTokenSource = new CancellationTokenSource();
         }
 
         public void stop()
         {
-            //if (_receiveHandlerThread != null && _receiveHandlerThread.IsAlive)
-            //{
-            //    _receiveHandlerThread.Abort();
-            //}
-            //if (_messageBuilderThread != null && _messageBuilderThread.IsAlive)
-            //{
-            //    _messageBuilderThread.Abort();
-            //}
-            //if (_sendingHandlerThread != null && _sendingHandlerThread.IsAlive)
-            //{
-            //    _sendingHandlerThread.Abort();
-            //}
-            //if (_messageDistributorThread != null && _messageDistributorThread.IsAlive)
-            //{
-            //    _messageDistributorThread.Abort();
-            //}
-            if (_socket != null && _socket.Connected)
+            try
             {
-                _socket.Close();
+                if (_receiveHandlerThread != null && _receiveHandlerThread.IsAlive)
+                {
+                    _receiveHandlerThreadTokenSource.Cancel();
+                }
+                if (_messageBuilderThread != null && _messageBuilderThread.IsAlive)
+                {
+                    _messageBuilderThreadTokenSource.Cancel();
+                }
+                if (_sendingHandlerThread != null && _sendingHandlerThread.IsAlive)
+                {
+                    _sendingHandlerThreadTokenSource.Cancel();
+                }
+                if (_messageDistributorThread != null && _messageDistributorThread.IsAlive)
+                {
+                    _messageDistributorThreadTokenSource.Cancel();
+                }
+            }
+            catch
+            {
+
+            }
+
+            try
+            {
+                if (_socket != null && _socket.Connected)
+                {
+                    _socket.Close();
+                }
+            }
+            catch
+            {
+
             }
             _needsRestart = true;
             _connected = false;
@@ -135,10 +159,7 @@ namespace TVHeadEnd.HTSP
                 }
             }
 
-            if(++_threadID == long.MaxValue)
-            {
-                _threadID = long.MinValue;
-            }
+            
 
             ThreadStart ReceiveHandlerRef = new ThreadStart(ReceiveHandler);
             _receiveHandlerThread = new Thread(ReceiveHandlerRef);
@@ -319,9 +340,12 @@ namespace TVHeadEnd.HTSP
         private void SendingHandler()
         {
             Boolean threadOk = true;
-            long currThreadID = _threadID;
-            while (_connected && threadOk && currThreadID == _threadID)
+            while (_connected && threadOk)
             {
+                if (_sendingHandlerThreadTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
                 try
                 {
                     HTSMessage message = _messagesForSendQueue.Dequeue();
@@ -333,13 +357,9 @@ namespace TVHeadEnd.HTSP
                             data2send.Length + "\nMessage: " + message.ToString());
                     }
                 }
-                catch (ThreadAbortException)
-                {
-                    threadOk = false;
-                    Thread.ResetAbort();
-                }
                 catch (Exception ex)
                 {
+                    threadOk = false;
                     _logger.Error("[TVHclient] SendingHandler caught exception : {0}", ex.ToString());
                     if (_listener != null)
                     {
@@ -357,18 +377,16 @@ namespace TVHeadEnd.HTSP
         {
             Boolean threadOk = true;
             byte[] readBuffer = new byte[1024];
-            long currThreadID = _threadID;
-            while (_connected && threadOk && currThreadID == _threadID)
+            while (_connected && threadOk)
             {
+                if (_receiveHandlerThreadTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
                 try
                 {
                     int bytesReveived = _socket.Receive(readBuffer);
                     _buffer.appendCount(readBuffer, bytesReveived);
-                }
-                catch (ThreadAbortException)
-                {
-                    threadOk = false;
-                    Thread.ResetAbort();
                 }
                 catch (Exception ex)
                 {
@@ -388,9 +406,12 @@ namespace TVHeadEnd.HTSP
         private void MessageBuilder()
         {
             Boolean threadOk = true;
-            long currThreadID = _threadID;
-            while (_connected && threadOk && currThreadID == _threadID)
+            while (_connected && threadOk)
             {
+                if (_messageBuilderThreadTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
                 try
                 {
                     byte[] lengthInformation = _buffer.getFromStart(4);
@@ -399,13 +420,9 @@ namespace TVHeadEnd.HTSP
                     HTSMessage response = HTSMessage.parse(messageData, _logger);
                     _receivedMessagesQueue.Enqueue(response);
                 }
-                catch (ThreadAbortException)
-                {
-                    threadOk = false;
-                    Thread.ResetAbort();
-                }
                 catch (Exception ex)
                 {
+                    threadOk = false;
                     if (_listener != null)
                     {
                         _listener.onError(ex);
@@ -421,9 +438,12 @@ namespace TVHeadEnd.HTSP
         private void MessageDistributor()
         {
             Boolean threadOk = true;
-            long currThreadID = _threadID;
-            while (_connected && threadOk && currThreadID == _threadID)
+            while (_connected && threadOk)
             {
+                if (_messageDistributorThreadTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
                 try
                 {
                     HTSMessage response = _receivedMessagesQueue.Dequeue();
@@ -454,13 +474,9 @@ namespace TVHeadEnd.HTSP
                     }
 
                 }
-                catch (ThreadAbortException)
-                {
-                    threadOk = false;
-                    Thread.ResetAbort();
-                }
                 catch (Exception ex)
                 {
+                    threadOk = false;
                     if (_listener != null)
                     {
                         _listener.onError(ex);
