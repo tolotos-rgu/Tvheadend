@@ -373,7 +373,9 @@ namespace TVHeadEnd
             getTicketMessage.Method = "getTicket";
             getTicketMessage.putField("channelId", channelId);
 
-            TaskWithTimeoutRunner<HTSMessage> twtr = new TaskWithTimeoutRunner<HTSMessage>(TIMEOUT);
+            _logger.Info("[TVHclient] GetChannelStream called with channelID: " + channelId);
+
+            TaskWithTimeoutRunner <HTSMessage> twtr = new TaskWithTimeoutRunner<HTSMessage>(TIMEOUT);
             TaskWithTimeoutResult<HTSMessage> twtRes = await twtr.RunWithTimeout(Task.Factory.StartNew<HTSMessage>(() =>
             {
                 LoopBackResponseHandler lbrh = new LoopBackResponseHandler();
@@ -433,32 +435,21 @@ namespace TVHeadEnd
                     }
 
                     return livetvasset;
-
                 }
                 else
                 {
+                    String baseURL = _htsConnectionHandler.GetHttpBaseUrl();
+                    String ticketPath = getTicketResponse.getString("path");
+                    String ticket = getTicketResponse.getString("ticket");
+                    String mediaPath = _htsConnectionHandler.GetHttpBaseUrl() + ticketPath + "?ticket=" + ticket;
+
+                    _logger.Info("[TVHclient] Building MediaSourceInfo with: " + mediaPath);
+
                     return new MediaSourceInfo
                     {
                         Id = "" + currSubscriptionId,
-                        Path = _htsConnectionHandler.GetHttpBaseUrl() + getTicketResponse.getString("path") + "?ticket=" + getTicketResponse.getString("ticket"),
+                        Path = mediaPath,
                         Protocol = MediaProtocol.Http,
-                        MediaStreams = new List<MediaStream>
-                            {
-                                new MediaStream
-                                {
-                                    Type = MediaStreamType.Video,
-                                    // Set the index to -1 because we don't know the exact index of the video stream within the container
-                                    Index = -1,
-                                    // Set to true if unknown to enable deinterlacing
-                                    IsInterlaced = true
-                                },
-                                new MediaStream
-                                {
-                                    Type = MediaStreamType.Audio,
-                                    // Set the index to -1 because we don't know the exact index of the audio stream within the container
-                                    Index = -1
-                                }
-                            }
                     };
 
                 }
@@ -469,6 +460,9 @@ namespace TVHeadEnd
 
         public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
         {
+            _logger.Info("[TVHclient] GetChannelStreamMediaSources called with channelID: " + channelId);
+
+
             throw new NotImplementedException();
         }
 
@@ -562,10 +556,8 @@ namespace TVHeadEnd
             MediaInfoRequest req = new MediaInfoRequest
             {
                 MediaType = MediaBrowser.Model.Dlna.DlnaProfileType.Video,
-                InputPath = probeUrl,
-                Protocol = MediaProtocol.Http,
+                MediaSource = mediaSourceInfo,
                 ExtractChapters = false,
-                VideoType = VideoType.VideoFile,
                 // currently not available !!! 
                 // RequiredHttpHeaders = mediaSourceInfo.RequiredHttpHeaders,
             };

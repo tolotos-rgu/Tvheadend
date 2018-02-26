@@ -34,6 +34,7 @@ namespace TVHeadEnd.HTSP
         private readonly SizeQueue<HTSMessage> _messagesForSendQueue;
         private readonly Dictionary<int, HTSResponseHandler> _responseHandlers;
 
+        private long _threadID = 0;
         private Thread _receiveHandlerThread;
         private Thread _messageBuilderThread;
         private Thread _sendingHandlerThread;
@@ -60,22 +61,22 @@ namespace TVHeadEnd.HTSP
 
         public void stop()
         {
-            if (_receiveHandlerThread != null && _receiveHandlerThread.IsAlive)
-            {
-                _receiveHandlerThread.Abort();
-            }
-            if (_messageBuilderThread != null && _messageBuilderThread.IsAlive)
-            {
-                _messageBuilderThread.Abort();
-            }
-            if (_sendingHandlerThread != null && _sendingHandlerThread.IsAlive)
-            {
-                _sendingHandlerThread.Abort();
-            }
-            if (_messageDistributorThread != null && _messageDistributorThread.IsAlive)
-            {
-                _messageDistributorThread.Abort();
-            }
+            //if (_receiveHandlerThread != null && _receiveHandlerThread.IsAlive)
+            //{
+            //    _receiveHandlerThread.Abort();
+            //}
+            //if (_messageBuilderThread != null && _messageBuilderThread.IsAlive)
+            //{
+            //    _messageBuilderThread.Abort();
+            //}
+            //if (_sendingHandlerThread != null && _sendingHandlerThread.IsAlive)
+            //{
+            //    _sendingHandlerThread.Abort();
+            //}
+            //if (_messageDistributorThread != null && _messageDistributorThread.IsAlive)
+            //{
+            //    _messageDistributorThread.Abort();
+            //}
             if (_socket != null && _socket.Connected)
             {
                 _socket.Close();
@@ -132,6 +133,11 @@ namespace TVHeadEnd.HTSP
 
                     Thread.Sleep(2000);
                 }
+            }
+
+            if(++_threadID == long.MaxValue)
+            {
+                _threadID = long.MinValue;
             }
 
             ThreadStart ReceiveHandlerRef = new ThreadStart(ReceiveHandler);
@@ -313,7 +319,8 @@ namespace TVHeadEnd.HTSP
         private void SendingHandler()
         {
             Boolean threadOk = true;
-            while (_connected && threadOk)
+            long currThreadID = _threadID;
+            while (_connected && threadOk && currThreadID == _threadID)
             {
                 try
                 {
@@ -350,7 +357,8 @@ namespace TVHeadEnd.HTSP
         {
             Boolean threadOk = true;
             byte[] readBuffer = new byte[1024];
-            while (_connected && threadOk)
+            long currThreadID = _threadID;
+            while (_connected && threadOk && currThreadID == _threadID)
             {
                 try
                 {
@@ -380,7 +388,8 @@ namespace TVHeadEnd.HTSP
         private void MessageBuilder()
         {
             Boolean threadOk = true;
-            while (_connected && threadOk)
+            long currThreadID = _threadID;
+            while (_connected && threadOk && currThreadID == _threadID)
             {
                 try
                 {
@@ -412,7 +421,8 @@ namespace TVHeadEnd.HTSP
         private void MessageDistributor()
         {
             Boolean threadOk = true;
-            while (_connected && threadOk)
+            long currThreadID = _threadID;
+            while (_connected && threadOk && currThreadID == _threadID)
             {
                 try
                 {

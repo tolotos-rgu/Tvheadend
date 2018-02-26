@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net46</TargetFrameworks>
-    <AssemblyVersion>1.1.2.0</AssemblyVersion>
-    <FileVersion>1.1.2.0</FileVersion>
+    <AssemblyVersion>1.1.4.1</AssemblyVersion>
+    <FileVersion>1.1.4.1</FileVersion>
     <Description>Emby plugin to provide Live-TV using TVHeadend server</Description>
     <Authors>Tolotos, FC7</Authors>
     <Company />
@@ -19,8 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MediaBrowser.Common" Version="3.3.6-beta" />
-    <PackageReference Include="MediaBrowser.Server.Core" Version="3.3.6-beta" />
+    <PackageReference Include="MediaBrowser.Common" Version="3.3.28" />
+    <PackageReference Include="MediaBrowser.Server.Core" Version="3.3.28" />
   </ItemGroup>
 
 </Project>
